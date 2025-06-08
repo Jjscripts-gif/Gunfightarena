@@ -1,0 +1,802 @@
+-- Load Rayfield UI library
+-- Updated Menu With Silent Aim, loadout menu
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local player = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local weaponsFolder = game:GetService("ReplicatedStorage").Weapons
+
+local unlimitedAmmo = false
+
+local players = game:GetService("Players");
+local teams = game:GetService("Teams");
+
+-- variables
+local camera = workspace.CurrentCamera;
+local closest = nil;
+ local closest_distance = math.huge;
+
+local weapons = {}
+for _, v in pairs(game:GetService("ReplicatedStorage").Weapons:GetChildren()) do
+    table.insert(weapons, v.Name)
+end
+
+local camos = {}
+for _, v in pairs(game:GetService("ReplicatedStorage").Camos:GetChildren()) do
+    table.insert(camos, v.Name)
+end
+
+-- Loadout selections
+local primary
+local secondary
+local primarycamo
+local secondarycamo
+---
+
+getgenv().DesiredWalkSpeed = 16
+getgenv().MaintainWalkSpeed = false
+getgenv().ESPTeamCheck = false
+
+
+
+-- Main Window
+local Window = Rayfield:CreateWindow({
+    Name = "Loraxxes Script's",
+    LoadingTitle = "Loraxees Interface Loading...",
+    LoadingSubtitle = "by Loraxee",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "AirHubV2", 
+        FileName = "Config"
+    },
+    Discord = {
+        Enabled = false
+    }
+})
+
+-- Tabs
+local AimbotTab = Window:CreateTab("🎯 Aimbot")
+local TabESP = Window:CreateTab("ESP")
+local MiscTab = Window:CreateTab("Misc")
+local LoadoutTab = Window:CreateTab("Loadouts")
+local TabColors = Window:CreateTab("Colors")
+
+-- ESP Settings
+local ESPObjects = {}
+local ESPSettings = {
+    Box = false,
+    Name = false,
+    HealthBar = false,
+    Tracers = false,
+    HeadDot = false,
+    Distance = false,
+    Chams = false,
+    Glow = false,
+}
+local ESPColors = {
+    Box = Color3.fromRGB(255, 255, 255),
+    Name = Color3.fromRGB(255, 255, 255),
+    HealthBar = Color3.fromRGB(0, 255, 0),
+    Tracer = Color3.fromRGB(255, 0, 0),
+    HeadDot = Color3.fromRGB(0, 255, 255),
+    Distance = Color3.fromRGB(255, 255, 255),
+    Chams = Color3.fromRGB(255, 0, 255),
+    Glow = Color3.fromRGB(0, 255, 255),
+}
+
+-- ESP Toggles
+for feature, _ in pairs(ESPSettings) do
+    TabESP:CreateToggle({
+        Name = feature:gsub("^%l", string.upper) .. " ESP",
+        CurrentValue = false,
+        Callback = function(value)
+            ESPSettings[feature] = value
+        end
+    })
+end
+
+TabESP:CreateToggle({
+    Name = "Team Check",
+    CurrentValue = getgenv().ESPTeamCheck,
+    Callback = function(Value)
+        getgenv().ESPTeamCheck = Value
+    end
+})
+
+
+-- Color Pickers
+for feature, color in pairs(ESPColors) do
+    TabColors:CreateColorPicker({
+        Name = feature .. " Color",
+        Color = color,
+        Callback = function(newColor)
+            ESPColors[feature] = newColor
+        end
+    })
+end
+
+-- Create ESP visuals for a player
+local function CreateESPForPlayer(player)
+    local esp = {}
+
+    esp.Box = Drawing.new("Square")
+    esp.Box.Thickness = 2
+    esp.Box.Filled = false
+
+    esp.Name = Drawing.new("Text")
+    esp.Name.Size = 14
+    esp.Name.Center = true
+    esp.Name.Outline = true
+    esp.Name.Text = player.Name
+
+    esp.HealthBar = Drawing.new("Line")
+    esp.HealthBar.Thickness = 3
+
+    esp.Tracer = Drawing.new("Line")
+    esp.Tracer.Thickness = 1
+
+    esp.HeadDot = Drawing.new("Circle")
+    esp.HeadDot.Radius = 4
+    esp.HeadDot.Filled = true
+
+    esp.Distance = Drawing.new("Text")
+    esp.Distance.Size = 14
+    esp.Distance.Center = true
+    esp.Distance.Outline = true
+
+    esp.Chams = Instance.new("Highlight")
+    esp.Chams.OutlineColor = Color3.new(0, 0, 0)
+    esp.Chams.Enabled = false
+    esp.Chams.Parent = player.Character or workspace
+
+    esp.Glow = Instance.new("Highlight")
+    esp.Glow.OutlineColor = Color3.new(0, 0, 0)
+    esp.Glow.Enabled = false
+    esp.Glow.Parent = player.Character or workspace
+
+    return esp
+end
+
+-- Clean up ESP
+local function RemoveESPForPlayer(player)
+    local esp = ESPObjects[player]
+    if esp then
+        esp.Box:Remove()
+        esp.Name:Remove()
+        esp.HealthBar:Remove()
+        esp.Tracer:Remove()
+        esp.HeadDot:Remove()
+        esp.Distance:Remove()
+        if esp.Chams then esp.Chams:Destroy() end
+        if esp.Glow then esp.Glow:Destroy() end
+        ESPObjects[player] = nil
+    end
+end
+
+-- Main ESP Update
+RunService.RenderStepped:Connect(function()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+            local rootPart = player.Character.HumanoidRootPart
+            local humanoid = player.Character.Humanoid
+            local screenPos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+
+            if onScreen then
+                if not ESPObjects[player] then
+                    ESPObjects[player] = CreateESPForPlayer(player)
+                end
+
+                local esp = ESPObjects[player]
+
+                -- Box
+                esp.Box.Color = ESPColors.Box
+                local size = 1000 / (Camera.CFrame.Position - rootPart.Position).Magnitude
+                local boxSize = Vector2.new(3 * size, 6 * size)
+                esp.Box.Size = boxSize
+                esp.Box.Position = Vector2.new(screenPos.X - boxSize.X/2, screenPos.Y - boxSize.Y/2)
+                esp.Box.Visible = ESPSettings.Box
+
+                -- Name
+                esp.Name.Color = ESPColors.Name
+                esp.Name.Position = Vector2.new(screenPos.X, screenPos.Y - 50)
+                esp.Name.Visible = ESPSettings.Name
+
+                -- Health Bar
+                local healthRatio = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+                local barHeight = 50
+                local barWidth = 4
+                local topLeft = Vector2.new(screenPos.X - 30, screenPos.Y - barHeight/2)
+                esp.HealthBar.From = topLeft + Vector2.new(0, barHeight)
+                esp.HealthBar.To = topLeft + Vector2.new(0, barHeight - (barHeight * healthRatio))
+                esp.HealthBar.Color = ESPColors.HealthBar
+                esp.HealthBar.Visible = ESPSettings.HealthBar
+
+                -- Tracer
+                esp.Tracer.Color = ESPColors.Tracer
+                esp.Tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                esp.Tracer.To = Vector2.new(screenPos.X, screenPos.Y)
+                esp.Tracer.Visible = ESPSettings.Tracers
+
+                -- Head Dot
+                if player.Character:FindFirstChild("Head") then
+                    local headPos, headVisible = Camera:WorldToViewportPoint(player.Character.Head.Position)
+                    esp.HeadDot.Position = Vector2.new(headPos.X, headPos.Y)
+                    esp.HeadDot.Color = ESPColors.HeadDot
+                    esp.HeadDot.Visible = ESPSettings.HeadDot and headVisible
+                else
+                    esp.HeadDot.Visible = false
+                end
+
+                -- Distance
+                local dist = math.floor((LocalPlayer.Character.HumanoidRootPart.Position - rootPart.Position).Magnitude)
+                esp.Distance.Text = dist .. "m"
+                esp.Distance.Position = Vector2.new(screenPos.X, screenPos.Y + 40)
+                esp.Distance.Color = ESPColors.Distance
+                esp.Distance.Visible = ESPSettings.Distance
+
+                -- Chams
+                esp.Chams.FillColor = ESPColors.Chams
+                esp.Chams.Enabled = ESPSettings.Chams
+
+                -- Glow
+                esp.Glow.FillColor = ESPColors.Glow
+                esp.Glow.Enabled = ESPSettings.Glow
+
+            else
+                if ESPObjects[player] then
+                    local esp = ESPObjects[player]
+                    esp.Box.Visible = false
+                    esp.Name.Visible = false
+                    esp.HealthBar.Visible = false
+                    esp.Tracer.Visible = false
+                    esp.HeadDot.Visible = false
+                    esp.Distance.Visible = false
+                    esp.Chams.Enabled = false
+                    esp.Glow.Enabled = false
+                end
+            end
+        else
+            if ESPObjects[player] then
+                local esp = ESPObjects[player]
+                esp.Box.Visible = false
+                esp.Name.Visible = false
+                esp.HealthBar.Visible = false
+                esp.Tracer.Visible = false
+                esp.HeadDot.Visible = false
+                esp.Distance.Visible = false
+                esp.Chams.Enabled = false
+                esp.Glow.Enabled = false
+            end
+        end
+    end
+       for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+        if getgenv().ESPTeamCheck and player.Team == LocalPlayer.Team then
+            if ESPObjects[player] then
+                RemoveESPForPlayer(player)
+            end
+            continue
+        end
+    end
+
+      end
+end)
+
+-- Cleanup when player leaves
+Players.PlayerRemoving:Connect(function(player)
+    RemoveESPForPlayer(player)
+end)
+
+
+--// Aimbot Settings Table
+getgenv().Aimbot = getgenv().Aimbot or {
+    Settings = {
+        Enabled = false,
+        Toggle = false,
+        TeamCheck = false,
+        WallCheck = false,
+        LockPart = "Head",
+        Sensitivity = 0.1,
+        TriggerKey = "MouseButton2",
+        SilentAim = false,
+        NoRecoil = false,
+    },
+    FOVSettings = {
+        Amount = 100,
+        Visible = false
+    }
+}
+
+--// Rayfield UI Setup (Replace AimbotTab with your Tab reference)
+AimbotTab:CreateToggle({
+    Name = "Enable Aimbot",
+    CurrentValue = getgenv().Aimbot.Settings.Enabled,
+    Callback = function(Value)
+        getgenv().Aimbot.Settings.Enabled = Value
+    end
+})
+AimbotTab:CreateToggle({
+    Name = "Enable Silent Aim",
+    CurrentValue = getgenv().Aimbot.Settings.SilentAim,
+    Callback = function(Value)
+        getgenv().Aimbot.Settings.SilentAim = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "No Recoil (testing)",
+    CurrentValue = getgenv().Aimbot.Settings.NoRecoil,
+    Callback = function(Value)
+        getgenv().Aimbot.Settings.NoRecoil = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "Toggle Mode",
+    CurrentValue = getgenv().Aimbot.Settings.Toggle,
+    Callback = function(Value)
+        getgenv().Aimbot.Settings.Toggle = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "Team Check",
+    CurrentValue = getgenv().Aimbot.Settings.TeamCheck,
+    Callback = function(Value)
+        getgenv().Aimbot.Settings.TeamCheck = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "Wall Check (Laggy)",
+    CurrentValue = getgenv().Aimbot.Settings.WallCheck,
+    Callback = function(Value)
+        getgenv().Aimbot.Settings.WallCheck = Value
+    end
+})
+
+
+
+AimbotTab:CreateDropdown({
+    Name = "Lock Part",
+    Options = { "Head", "UpperTorso", "HumanoidRootPart" },
+    CurrentOption = getgenv().Aimbot.Settings.LockPart,
+    Callback = function(Option)
+        getgenv().Aimbot.Settings.LockPart = Option
+    end
+})
+
+AimbotTab:CreateSlider({
+    Name = "Aim Sensitivity",
+    Range = {0, 1},
+    Increment = 0.01,
+    CurrentValue = getgenv().Aimbot.Settings.Sensitivity,
+    Callback = function(Value)
+        getgenv().Aimbot.Settings.Sensitivity = Value
+    end
+})
+
+AimbotTab:CreateSlider({
+    Name = "FOV Radius",
+    Range = {0, 500},
+    Increment = 1,
+    CurrentValue = getgenv().Aimbot.FOVSettings.Amount,
+    Callback = function(Value)
+        getgenv().Aimbot.FOVSettings.Amount = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "Show FOV Circle",
+    CurrentValue = getgenv().Aimbot.FOVSettings.Visible,
+    Callback = function(Value)
+        getgenv().Aimbot.FOVSettings.Visible = Value
+    end
+})
+
+AimbotTab:CreateInput({
+    Name = "Trigger Key (MouseButton2, E, etc)",
+    PlaceholderText = getgenv().Aimbot.Settings.TriggerKey,
+    RemoveTextAfterFocusLost = true,
+    Callback = function(Text)
+        getgenv().Aimbot.Settings.TriggerKey = Text
+    end
+})
+
+--// Aimbot Logic
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- FOV Circle
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Thickness = 1
+FOVCircle.NumSides = 64
+FOVCircle.Radius = getgenv().Aimbot.FOVSettings.Amount
+FOVCircle.Filled = false
+
+RunService.RenderStepped:Connect(function()
+    FOVCircle.Visible = getgenv().Aimbot.FOVSettings.Visible
+    FOVCircle.Radius = getgenv().Aimbot.FOVSettings.Amount
+    FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+end)
+
+-- Aimbot Helpers
+local TargetLocked = nil
+local Holding = false
+
+local function IsOnScreen(position)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(position)
+    return onScreen
+end
+
+local function IsWallBlocking(origin, target)
+    if not getgenv().Aimbot.Settings.WallCheck then return false end
+    local ray = Ray.new(origin, (target - origin).Unit * 500)
+    local part = workspace:FindPartOnRayWithIgnoreList(ray, {LocalPlayer.Character}, false, true)
+    return part and part:IsDescendantOf(workspace) and not part:IsDescendantOf(target.Parent)
+end
+
+local function GetClosestTarget()
+    local shortest = getgenv().Aimbot.FOVSettings.Amount
+    local closest = nil
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(getgenv().Aimbot.Settings.LockPart) then
+            if getgenv().Aimbot.Settings.TeamCheck and player.Team == LocalPlayer.Team then continue end
+
+            local part = player.Character[getgenv().Aimbot.Settings.LockPart]
+            if not part then continue end
+            if not IsOnScreen(part.Position) then continue end
+            if IsWallBlocking(Camera.CFrame.Position, part.Position) then continue end
+
+            local screenPos = Camera:WorldToViewportPoint(part.Position)
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+
+            if dist < shortest then
+                shortest = dist
+                closest = player
+            end
+        end
+    end
+
+    return closest
+end
+
+-- Input Handling
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 and getgenv().Aimbot.Settings.TriggerKey == "MouseButton2" then
+        Holding = true
+    elseif input.KeyCode.Name == getgenv().Aimbot.Settings.TriggerKey then
+        Holding = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 and getgenv().Aimbot.Settings.TriggerKey == "MouseButton2" then
+        Holding = false
+        if not getgenv().Aimbot.Settings.Toggle then TargetLocked = nil end
+    elseif input.KeyCode.Name == getgenv().Aimbot.Settings.TriggerKey then
+        Holding = false
+        if not getgenv().Aimbot.Settings.Toggle then TargetLocked = nil end
+    end
+end)
+
+-- Aimbot Execution
+RunService.RenderStepped:Connect(function()
+    if not getgenv().Aimbot.Settings.Enabled then return end
+
+    if getgenv().Aimbot.Settings.Toggle then
+        if Holding and not TargetLocked then
+            TargetLocked = GetClosestTarget()
+        elseif not Holding then
+            TargetLocked = nil
+        end
+    else
+        if Holding then
+            TargetLocked = GetClosestTarget()
+        else
+            TargetLocked = nil
+        end
+    end
+
+    if TargetLocked and TargetLocked.Character and TargetLocked.Character:FindFirstChild(getgenv().Aimbot.Settings.LockPart) then
+        local part = TargetLocked.Character[getgenv().Aimbot.Settings.LockPart]
+        local direction = (part.Position - Camera.CFrame.Position).Unit
+        local newCF = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + direction)
+        Camera.CFrame = Camera.CFrame:Lerp(newCF, getgenv().Aimbot.Settings.Sensitivity)
+    end
+end)
+
+-- silent aim logic
+
+
+-- Services
+local players = game:GetService("Players")
+local teams = game:GetService("Teams")
+local camera = workspace.CurrentCamera
+
+-- Get Closest Player
+local function get_closest_player()
+    local closest = nil
+    local closest_distance = math.huge
+
+      for _, character in workspace.GetChildren(workspace) do
+        local player = players.FindFirstChild(players, character.Name);
+        local root_part = character.FindFirstChild(character, "HumanoidRootPart");
+
+        if (not player) or (not root_part) then
+            continue;
+        end
+
+        local team_attribute = player.GetAttribute(player, "Team");
+
+        if (not team_attribute) then
+            continue;
+        end
+
+        if (teams[team_attribute] == players.LocalPlayer.Team) then
+            continue;
+        end
+
+        local position, on_screen = camera.WorldToViewportPoint(camera, root_part.Position);
+
+        if (not on_screen) then
+            continue;
+        end
+
+        local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2);
+        local distance = (Vector2.new(position.X, position.Y) - center).Magnitude;
+
+        if (closest_distance > distance) then
+            closest = character;
+            closest_distance = distance;
+        end
+    end
+
+    return closest;
+end
+
+-- main
+do
+    local events = { -- only a table incase you wanna add more events, its really easy
+        ["ShootEvent"] = function(arg)
+            return (typeof(arg) == "Instance" and arg.Name and (string.find(arg.Name, players.LocalPlayer.Name))); -- dumb method for checking if the shooter is lplr, but none of the other ones seemed to work... (?, might've been tweaking, feel free to try it)
+        end,
+    };
+
+    old_namecall = hookmetamethod(game, "__namecall", function(self, caller, message, ...)
+        local method = getnamecallmethod();
+
+        if (method == "Fire" and self.Name == "Sync") then -- intercept actor communication for 1337 haxx.. (so we can log all events being sent to the actor)
+            for event, identify in events do
+                if (event == "ShootEvent" and identify(message)) then
+                    local closest_player = get_closest_player();
+                    local ammo, cframe, id, weapon, projectile = ...;
+                                     
+                    if (closest_player and closest_player.FindFirstChild(closest_player, "Head")) then
+                    if getgenv().Aimbot.Settings.SilentAim then
+                        cframe = closest_player.Head.CFrame; -- HEAT manipulation...
+                    end
+
+                    return old_namecall(self, caller, message, ammo, cframe, id, weapon, projectile, ...);
+                   end
+                end
+            end
+        end
+
+        return old_namecall(self, caller, message, ...);
+    end)
+end
+
+
+MiscTab:CreateToggle({
+    Name = "Enable NoClip",
+    CurrentValue = false,
+    Callback = function(Value)
+        getgenv().FlyEnabled = Value
+        ToggleFly(Value)
+    end
+})
+
+
+
+MiscTab:CreateSlider({
+    Name = "WalkSpeed",
+    Range = {16, 100},
+    Increment = 1,
+    CurrentValue = 16,
+    Callback = function(Value)
+        SetWalkSpeed(Value)
+    end
+})
+
+MiscTab:CreateToggle({
+    Name = "Always Maintain WalkSpeed",
+    CurrentValue = false,
+    Callback = function(Value)
+        getgenv().MaintainWalkSpeed = Value
+    end
+})
+
+
+-- Primary Weapon Dropdown
+LoadoutTab:CreateDropdown({
+    Name = "Primary Weapon",
+    Options = weapons,
+    CurrentOption = weapons[1],
+    Callback = function(Value)
+    primary = tostring(Value[1])
+    
+end
+})
+
+-- Secondary Weapon Dropdown
+LoadoutTab:CreateDropdown({
+    Name = "Secondary Weapon",
+    Options = weapons,
+    CurrentOption = weapons[1],
+    Callback = function(Value)
+        secondary = tostring(Value[1])
+    end
+})
+
+-- Primary Camo Dropdown
+LoadoutTab:CreateDropdown({
+    Name = "Primary Camo",
+    Options = camos,
+    CurrentOption = camos[1],
+    Callback = function(Value)
+        primarycamo = tostring(Value[1])
+    end
+})
+
+-- Secondary Camo Dropdown
+LoadoutTab:CreateDropdown({
+    Name = "Secondary Camo",
+    Options = camos,
+    CurrentOption = camos[1],
+    Callback = function(Value)
+        secondarycamo = tostring(Value[1])
+    end
+})
+
+LoadoutTab:CreateButton({
+    Name = "Apply Loadout",
+    Callback = function()
+            player:SetAttribute("Primary", primary)
+            player:SetAttribute("PrimaryCamo", primarycamo)
+            player:SetAttribute("Secondary", secondary)
+            player:SetAttribute("SecondaryCamo", secondarycamo)
+       
+    end
+})
+
+
+--// Fly Logic
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LP = Players.LocalPlayer
+local Character = LP.Character or LP.CharacterAdded:Wait()
+local HRP = Character:WaitForChild("HumanoidRootPart")
+
+getgenv().FlyEnabled = false
+local BV = nil
+local FlyDirection = Vector3.zero
+local Speed = 60
+
+local KeysDown = {
+    W = false, A = false, S = false, D = false,
+    Space = false, Shift = false
+}
+
+local function UpdateDirection()
+    local cam = workspace.CurrentCamera
+    local moveVec = Vector3.zero
+
+    if KeysDown.W then moveVec += cam.CFrame.LookVector end
+    if KeysDown.S then moveVec -= cam.CFrame.LookVector end
+    if KeysDown.A then moveVec -= cam.CFrame.RightVector end
+    if KeysDown.D then moveVec += cam.CFrame.RightVector end
+    if KeysDown.Space then moveVec += cam.CFrame.UpVector end
+    if KeysDown.Shift then moveVec -= cam.CFrame.UpVector end
+
+    FlyDirection = moveVec ~= Vector3.zero and moveVec.Unit * Speed or Vector3.zero
+end
+
+function ToggleFly(state)
+    if state then
+        BV = Instance.new("BodyVelocity")
+        BV.Velocity = Vector3.zero
+        BV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        BV.P = 15000
+        BV.Parent = HRP
+    else
+        if BV then BV:Destroy() BV = nil end
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+
+    if input.KeyCode == Enum.KeyCode.W then KeysDown.W = true end
+    if input.KeyCode == Enum.KeyCode.A then KeysDown.A = true end
+    if input.KeyCode == Enum.KeyCode.S then KeysDown.S = true end
+    if input.KeyCode == Enum.KeyCode.D then KeysDown.D = true end
+    if input.KeyCode == Enum.KeyCode.Space then KeysDown.Space = true end
+    if input.KeyCode == Enum.KeyCode.LeftShift then KeysDown.Shift = true end
+
+    UpdateDirection()
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then KeysDown.W = false end
+    if input.KeyCode == Enum.KeyCode.A then KeysDown.A = false end
+    if input.KeyCode == Enum.KeyCode.S then KeysDown.S = false end
+    if input.KeyCode == Enum.KeyCode.D then KeysDown.D = false end
+    if input.KeyCode == Enum.KeyCode.Space then KeysDown.Space = false end
+    if input.KeyCode == Enum.KeyCode.LeftShift then KeysDown.Shift = false end
+
+    UpdateDirection()
+end)
+
+RunService.RenderStepped:Connect(function()
+    if getgenv().FlyEnabled and BV then
+        UpdateDirection()
+        BV.Velocity = FlyDirection
+    end
+end)
+
+function SetWalkSpeed(speed)
+    local Humanoid = LP.Character and LP.Character:FindFirstChildWhichIsA("Humanoid")
+    if not Humanoid then return end
+
+    getgenv().DesiredWalkSpeed = (speed == 0 and 16 or speed)
+    Humanoid.WalkSpeed = getgenv().DesiredWalkSpeed
+end
+
+-- Keep setting the walkspeed if the game tries to reset it
+RunService.Stepped:Connect(function()
+    if getgenv().MaintainWalkSpeed then
+        local Humanoid = LP.Character and LP.Character:FindFirstChildWhichIsA("Humanoid")
+        if Humanoid and Humanoid.WalkSpeed ~= getgenv().DesiredWalkSpeed then
+            Humanoid.WalkSpeed = getgenv().DesiredWalkSpeed
+        end
+    end
+end)
+
+-- Reset on respawn
+LP.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Humanoid").WalkSpeed = getgenv().DesiredWalkSpeed
+end)
+
+
+-- no recoil logic
+
+local localPlayer = game:GetService("Players").LocalPlayer
+
+while task.wait() do
+    if getgenv().Aimbot.Settings.NoRecoil then
+    if localPlayer.PlayerScripts.Vortex.Modifiers:FindFirstChild("Steadiness") then
+        localPlayer.PlayerScripts.Vortex.Modifiers.Steadiness.Value = 0
+       end
+    end
+end
+
+
+
+
+
+
+
+
+
